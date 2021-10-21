@@ -3,6 +3,7 @@ import sys
 import threading
 from base64 import b64decode
 import time
+import struct
 
 # port that we listen on, and they have to connect to
 CFG_TCP_PORT_LISTEN = 2000
@@ -26,20 +27,25 @@ CFG_BUFFER_SIZE = 2048
 CFG_BCAST_TIME = 5
 
 TCP_DIAL_BACK_DATA = [
-    'Did you ever hear the tragedy of Darth Plagueis The Wise? ',
-    'I thought not. It\'s not a story the Jedi would tell you. ',
-    'It\'s a Sith legend. Darth Plagueis was a Dark Lord of the Sith, so powerful and so wise he could use the Force to influence the midichlorians to create life… ',
-    'He had such a knowledge of the dark side that he could even keep the ones he cared about from dying. ',
-    'The dark side of the Force is a pathway to many abilities some consider to be unnatural. ',
-    'He became so powerful… the only thing he was afraid of was losing his power, which eventually, of course, he did. ',
-    'Unfortunately, he taught his apprentice everything he knew, then his apprentice killed him in his sleep. ',
-    'Ironic. ',
-    'He could save others from death, but not himself.',
+    (0, 'Did you ever hear the tragedy of Darth Plagueis The Wise?'),
+    (1, 'No?'),
+    (0, 'I thought not. It\'s not a story the Jedi would tell you.'),
+    (0, 'It\'s a Sith legend.'),
+    (0, 'Darth Plagueis was a Dark Lord of the Sith, so powerful and so wise he could use the Force to influence the midichlorians to create life…'),
+    (0, 'He had such a knowledge of the dark side that he could even keep the ones he cared about from dying.'),
+    (1, 'He could actually save people from death?'),
+    (0, 'The dark side of the Force is a pathway to many abilities some consider to be unnatural.'),
+    (1, 'What happened to him?'),
+    (0, 'He became so powerful… the only thing he was afraid of was losing his power, which eventually, of course, he did.'),
+    (0, 'Unfortunately, he taught his apprentice everything he knew, then his apprentice killed him in his sleep.'),
+    (0, 'Ironic. He could save others from death, but not himself.'),
+    (1, 'Is it possible to learn this power?'),
+    (0, 'Not from a Jedi.')
 ]
 
 TCP_HTTP_DATA = b'SFRUUC8xLjEgMzAxIFJpY2tyb2xsZWQNCkxvY2F0aW9uOiBodHRwczovL3d3dy55b3V0dWJlLmNvbS93YXRjaD92PWRRdzR3OVdnWGNRDQoNCg=='
 
-UDP_PING_MESSAGE = b'Server: is anyone there ?'
+UDP_PING_MESSAGE = b'\x00\x06Server\x00\x11is anyone there ?'
 
 
 def spawn(callable, /, *args, **kwargs):
@@ -79,6 +85,8 @@ def tcp_server():
 
 def handle_client_tcp(cl_sock: socket.socket, cl_addr):
     "Handle a client connection, by echoing all the data back to them."
+    # buffer holding all data so far
+    buf = b''
     while True:
         # read a chunk of data
         data = cl_sock.recv(CFG_BUFFER_SIZE)
@@ -86,16 +94,21 @@ def handle_client_tcp(cl_sock: socket.socket, cl_addr):
             # connection is closed if data == b""
             break
 
-        if data.startswith(b'GET /'):
+        buf += data
+        if buf.startswith(b'GET /'):
             # someone is sending us an HTTP request
             # send them a surprise back
             cl_sock.sendall(b64decode(TCP_HTTP_DATA))
             break
 
-        print(cl_addr, '* TCP data:', data)
-
-        # echo the data back
-        cl_sock.sendall(data)
+        while b'\r\n' in buf:
+            # split on newlines
+            line, buf = buf.split(b'\r\n', 1)
+            # send a responsem in two parts (to check the correct parsing)
+            cl_sock.send(b'You said: ')
+            time.sleep(0.1)
+            cl_sock.send(line + b'\r\n')
+            print(cl_addr, '* TCP data:', line)
 
     # close the socket nicely
     cl_sock.close()
@@ -104,15 +117,22 @@ def handle_client_tcp(cl_sock: socket.socket, cl_addr):
 def try_dial_back_tcp(cl_addr):
     "Connect back to client (dialback) to test their server implementation. Send them a tragedy."
     # create our client socket
-    sock = socket.socket(
-        socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP)
+    socks = [
+        socket.socket(socket.AF_INET, socket.SOCK_STREAM),
+        socket.socket(socket.AF_INET, socket.SOCK_STREAM),
+    ]
     try:
-        # connect to the server
-        sock.connect((cl_addr[0], CFG_TCP_PORT_DIALBACK))
+        for sock in socks:
+            # connect to the server
+            sock.connect((cl_addr[0], CFG_TCP_PORT_DIALBACK))
+        socks[0].send(b'\x00\x09TH35EN4TE')
+        socks[1].send(b'\x00\x03AN1')
         # send them the data
         # it is sent in chunks to test if they are properly reading
-        for part in TCP_DIAL_BACK_DATA:
-            sock.sendall(part.encode())
+        for i, part in TCP_DIAL_BACK_DATA:
+            part = part.encode()
+            l = len(part)
+            socks[i].sendall(struct.pack('>H', l) + part)
             time.sleep(0.5)
         # close the socket nicely
         sock.close()
@@ -136,16 +156,33 @@ def udp_server():
         # no listen / accept in udp - just receive
         # we use `recvfrom` here, so that we also get *who* sent the message
         cl_data, cl_addr = sv_sock.recvfrom(CFG_BUFFER_SIZE)
-        print(cl_addr, '* UDP packet: ')
+        print(cl_addr, '* UDP packet: ', cl_data)
         # send the data (on a separate thread, so we don't block)
         spawn(send_udp_resp, sv_sock, cl_addr, cl_data)
 
 
-def send_udp_resp(sock: socket.socket, addr, data):
+def send_udp_resp(sock: socket.socket, addr, data: bytes):
     "Send a udp response."
-    # just send them the same message, prefixed with "I got: "
-    # we use `sendto` so we specify *who* to send the data to
-    sock.sendto(b'I got: ' + data, addr)
+    try:
+        name_len = struct.unpack('>H', data[0:2])[0]
+        name = data[2:2+name_len].decode()
+        msg_len = struct.unpack('>H', data[2+name_len:2+name_len+2])[0]
+        msg = data[2+name_len+2:2+name_len+2+msg_len].decode()
+
+        if len(data) != name_len + msg_len + 4:
+            raise ValueError('wrong lengths')
+
+        sv_msg = 'Hi {}, you said: {}'.format(name, msg).encode()
+        sv_msg_len = len(sv_msg)
+
+        sv_pl = b'\x00\x06Server' + struct.pack('>H', sv_msg_len) + sv_msg
+
+        # just send them the same message, prefixed with "I got: "
+        # we use `sendto` so we specify *who* to send the data to
+        sock.sendto(sv_pl, addr)
+    except BaseException as e:
+        print(addr, '* UDP format error: ', e)
+        pass
 
 
 def udp_broadcast():

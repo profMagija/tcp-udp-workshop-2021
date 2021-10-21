@@ -13,10 +13,9 @@ sock.bind(('0.0.0.0', 4000))
 print(sock.recvfrom(2000))
 
 # sending message
-sock.sendto(b'test: hello there!', ('<broadcast>', 4000))
+sock.sendto(b'\x00\x04test\x00\x0bhello there!', ('<broadcast>', 4000))
 
-print(sock.recv(2000)) # probably our own message
+print(sock.recv(2000))  # probably our own message
 
 # put a sender and receiver on two threads, feed `input()` into sender
 # and print any `recv`-ed data, and you got yourself a broadcast chat :)
-# NOTE: just tell everyone to prefix their messages with `username: `
