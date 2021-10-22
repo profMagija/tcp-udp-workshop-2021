@@ -60,7 +60,7 @@ Nikola Bebić / rač / petnica
 from socket import *
 
 # create a socket object
-sock = socket(af_inet, sock_stream)
+sock = socket(AF_INET, SOCK_STREAM)
 
 # connect to a server = (host, port)
 sock.connect(("www.example.com", 1234)) # ( address )
@@ -113,7 +113,7 @@ for other languages check out https://rosettacode.org/
 ```py
 from socket import *
 
-sock = socket(af_inet, sock_stream)
+sock = socket(AF_INET, SOCK_STREAM)
 
 sock.bind(('0.0.0.0', 1234))     # ( address )
 
@@ -134,12 +134,14 @@ while true:
 #### python threading
 
 ```py
+from threading import Thread
+
 def do_something(a, b, c):
     # handle things
     print(a + b - c)
 
 # somewhere else
-thr = thread(target=do_something, args=(x, y, z))
+thr = Thread(target=do_something, args=(x, y, z))
 
 thr.start()
 # spins a new thread and calls `do_somehting(x, y, z)`
@@ -150,11 +152,11 @@ thr.start()
 
 ### demo server
 
-* client connects, sends name as longstring
+* client connects, sends name as LONGSTRING
   * two bytes unsigned integer, length of the string
   * data as astring of ascii characters
   * **hint** python `struct` module
-* after that, client sends messages as longstring
+* after that, client sends messages as LONGSTRING
 
 > **task**: print each message as it is received
 > **note**: there are multiple clients
@@ -170,11 +172,11 @@ thr.start()
 
 # udp
 
-> user datagram protocol (udp) is one of the core members of the internet protocol suite.
+> User Datagram Pprotocol (UDP) is one of the core members of the Internet Protocol suite.
 >
-> with udp, computer applications can send messages, in this case referred to as **datagrams**, to other hosts on an internet protocol (ip) network.
+> With UDP, computer applications can send messages, in this case referred to as **datagrams**, to other hosts on an Internet Protocol (IP) network.
 > 
-> it has no handshaking dialogues, \[...\] there is **no guarantee** of delivery, ordering, or duplicate protection.
+> It has no handshaking dialogues, \[...\] there is **no guarantee** of delivery, ordering, or duplicate protection.
 
 ---
 
@@ -193,7 +195,7 @@ thr.start()
 from socket import *
 
 # create a datagram socket (udp)
-sock = socket(af_inet, sock_dgram)
+sock = socket(AF_INET, SOCK_DGRAM)
 
 # bind to address, (needed only if receiving)
 sock.bind( ('0.0.0.0', 7373) )                       # ( address )
@@ -212,8 +214,8 @@ sock.close()
 
 ## udp demo pt1
 
-* `username` = longstring
-* `message` = longstring
+* `username` = LONGSTRING
+* `message` = LONGSTRING
 * example:  
   `00 04 70 72 6f 66 00 0b 68 65 6c 6c 6f 20 74 68 65 72 65`
 * read messages from console, send them with your username
@@ -238,7 +240,7 @@ sock.close()
   * `'<broadcast>'` in python
 * broadcast sockets need to be marked as such - `so_broadcast`
 ```py
-sock.setopt(sol_socket, so_broadcast, 1)
+sock.setopt(SOL_SOCKET, SO_BROADCAST, 1)
 ```
 
 ---
